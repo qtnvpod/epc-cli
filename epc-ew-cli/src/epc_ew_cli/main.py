@@ -75,4 +75,3 @@ def cli(
 
 def run() -> None:
     app()
-
