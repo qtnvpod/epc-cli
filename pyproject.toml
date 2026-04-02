@@ -1,0 +1,31 @@
+[project]
+name = "epc-ew"
+version = "0.1.0"
+description = "EPC consumer for England & Wales (UPRN-driven)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "httpx>=0.27.0",
+  "typer>=0.12.0",
+  "python-dotenv>=1.0.0",
+  "duckdb>=1.0.0",
+]
+
+[project.scripts]
+epc-ew = "epc_ew:app"
+
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/epc_ew"]
+
+[tool.ruff]
+line-length = 100
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.0",
+]
+
