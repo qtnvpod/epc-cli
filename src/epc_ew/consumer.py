@@ -324,8 +324,11 @@ def save_epc_by_uprn_file(
         con = duckdb.connect()
         r1 = con.execute("SELECT COUNT(*) FROM read_csv(?)", [str(tmp)]).fetchone()
         r2 = con.execute("SELECT COUNT(DISTINCT CAST(uprn AS VARCHAR)) FROM read_csv(?)", [str(tmp)]).fetchone()
-        certificate_rows = int((r1[0] if r1 is not None else 0) or 0)
-        successful_uprns = int((r2[0] if r2 is not None else 0) or 0)
+
+        if r1 is not None:
+            certificate_rows = int(r1[0] or 0)
+        if r2 is not None:
+            successful_uprns = int(r2[0] or 0)
 
     finalise_output(tmp, out, resume)
     return out, len(normalized), successful_uprns, certificate_rows
