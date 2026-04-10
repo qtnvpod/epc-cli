@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+from decimal import Decimal, InvalidOperation
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,24 @@ DOMESTIC_SEARCH_PATH = "/api/v1/domestic/search"
 MAX_PAGE_SIZE = 5000
 
 _NUM = re.compile(r"^\d+$")
+
+
+def _normalize_uprn_cell(raw: str) -> str | None:
+    v = raw.strip().lstrip("\ufeff")
+    if not v:
+        return None
+    if _NUM.match(v):
+        return v
+    if "e" in v.lower() or "." in v:
+        try:
+            n = int(Decimal(v))
+            if n < 0:
+                return None
+            s = str(n)
+            return s if _NUM.match(s) else None
+        except (InvalidOperation, ValueError, OverflowError):
+            return None
+    return None
 
 
 @dataclass(frozen=True)
@@ -61,14 +80,10 @@ def load_uprns(file: Optional[Path], uprns: list[str]) -> list[str]:
     if (file is None and not uprns) or (file is not None and uprns):
         raise ValueError("Exactly one of --file or --uprns must be supplied.")
 
-    def norm(v: str) -> str | None:
-        v = v.strip().lstrip("\ufeff")
-        return v if v and _NUM.match(v) else None
-
     if file is None:
         parsed: list[str] = []
         for u in uprns:
-            n = norm(u)
+            n = _normalize_uprn_cell(u)
             if n is None:
                 raise ValueError(f"Invalid UPRN: {u!r} (must be numeric)")
             parsed.append(n)
@@ -94,7 +109,7 @@ def load_uprns(file: Optional[Path], uprns: list[str]) -> list[str]:
             raw = (row.get(col) or "").strip()
             if not raw:
                 continue
-            n = norm(raw)
+            n = _normalize_uprn_cell(raw)
             if n is None:
                 raise ValueError(f"Invalid UPRN value in CSV column {col!r}: {raw!r}")
             collected.append(n)
