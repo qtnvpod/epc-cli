@@ -41,6 +41,18 @@ def _normalize_uprn_cell(raw: str) -> str | None:
     return None
 
 
+def _resolve_token(token: str | None) -> str:
+    t = (token or "").strip()
+    if not t:
+        t = os.environ.get("EPC_API_ENGLAND_WALES_TOKEN", "").strip()
+    if not t:
+        raise ValueError(
+            "Missing token. Provide token=... or set EPC_API_ENGLAND_WALES_TOKEN "
+            "(Base64-encoded basic auth token)."
+        )
+    return t
+
+
 @dataclass(frozen=True)
 class ResumeState:
     output_tmp: str
@@ -241,6 +253,72 @@ def _csv_pages_to_rows(pages: list[str]) -> list[dict[str, str]]:
     return [dict(row) for row in r]
 
 
+class EpcEwClient:
+    def __init__(
+        self,
+        *,
+        token: str | None = None,
+        batch_size: int = 50,
+        page_size: int = MAX_PAGE_SIZE,
+    ) -> None:
+        self.token = _resolve_token(token)
+        self.batch_size = batch_size
+        self.page_size = page_size
+
+    def get_epc_rows(self, uprns: Sequence[str | int]) -> list[dict[str, str]]:
+        u = load_uprns(None, [str(x) for x in uprns])
+        rows: list[dict[str, str]] = []
+        batches = _chunks(u, self.batch_size)
+        with httpx.Client(base_url=API_BASE_URL, timeout=httpx.Timeout(60.0), follow_redirects=True) as c:
+            for b in batches:
+                pages = fetch_all_for_batch(c, token=self.token, uprns=b, page_size=self.page_size)
+                rows.extend(_csv_pages_to_rows(pages))
+        return rows
+
+    def get_epc_by_uprn(self, uprns: Sequence[str | int]) -> dict[str, list[dict[str, str]]]:
+        normalized = load_uprns(None, [str(x) for x in uprns])
+        out: dict[str, list[dict[str, str]]] = {u: [] for u in normalized}
+        for row in self.get_epc_rows(normalized):
+            u = (row.get("uprn") or "").strip()
+            if u in out:
+                out[u].append(row)
+        return out
+
+    def save_epc_by_uprn_file(
+        self, uprns: Sequence[str | int], path: Path, *, overwrite: bool = False
+    ) -> tuple[Path, int, int, int]:
+        normalized = load_uprns(None, [str(x) for x in uprns])
+        out, tmp, resume = out_paths(path, overwrite=overwrite)
+        run_batches(
+            token=self.token,
+            uprns=normalized,
+            output_tmp=tmp,
+            resume_path=resume,
+            batch_size=self.batch_size,
+            page_size=self.page_size,
+            overwrite=overwrite,
+        )
+
+        successful_uprns = 0
+        certificate_rows = 0
+        if tmp.exists() and tmp.stat().st_size > 0:
+            import duckdb
+
+            con = duckdb.connect()
+            r1 = con.execute("SELECT COUNT(*) FROM read_csv(?)", [str(tmp)]).fetchone()
+            r2 = con.execute(
+                "SELECT COUNT(DISTINCT CAST(uprn AS VARCHAR)) FROM read_csv(?)", [str(tmp)]
+            ).fetchone()
+
+            if r1 is not None:
+                certificate_rows = int(r1[0] or 0)
+            if r2 is not None:
+                successful_uprns = int(r2[0] or 0)
+
+        finalise_output(tmp, out, resume)
+        return out, len(normalized), successful_uprns, certificate_rows
+
+
 def get_epc_rows(
     uprns: Sequence[str | int],
     *,
@@ -248,26 +326,7 @@ def get_epc_rows(
     batch_size: int = 50,
     page_size: int = MAX_PAGE_SIZE,
 ) -> list[dict[str, str]]:
-    """
-    Fetch domestic EPC rows (England & Wales) for the given UPRNs.
-
-    Returns a list of dicts where keys are the API CSV column names.
-    """
-    if token is None or not token.strip():
-        token = os.environ.get("EPC_API_ENGLAND_WALES_TOKEN", "").strip() or None
-    if token is None:
-        raise ValueError(
-            "Missing token. Provide token=... or set EPC_API_ENGLAND_WALES_TOKEN (Base64-encoded basic auth token)."
-        )
-
-    u = load_uprns(None, [str(x) for x in uprns])
-    rows: list[dict[str, str]] = []
-    batches = _chunks(u, batch_size)
-    with httpx.Client(base_url=API_BASE_URL, timeout=httpx.Timeout(60.0), follow_redirects=True) as c:
-        for b in batches:
-            pages = fetch_all_for_batch(c, token=token, uprns=b, page_size=page_size)
-            rows.extend(_csv_pages_to_rows(pages))
-    return rows
+    return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).get_epc_rows(uprns)
 
 
 def get_epc_by_uprn(
@@ -277,14 +336,7 @@ def get_epc_by_uprn(
     batch_size: int = 50,
     page_size: int = MAX_PAGE_SIZE,
 ) -> dict[str, list[dict[str, str]]]:
-
-    normalized = load_uprns(None, [str(x) for x in uprns])
-    out: dict[str, list[dict[str, str]]] = {u: [] for u in normalized}
-    for row in get_epc_rows(normalized, token=token, batch_size=batch_size, page_size=page_size):
-        u = (row.get("uprn") or "").strip()
-        if u in out:
-            out[u].append(row)
-    return out
+    return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).get_epc_by_uprn(uprns)
 
 
 def save_epc_by_uprn_file(
@@ -296,42 +348,9 @@ def save_epc_by_uprn_file(
     page_size: int = MAX_PAGE_SIZE,
     overwrite: bool = False,
 ) -> tuple[Path, int, int, int]:
-
-    if token is None or not token.strip():
-        token = os.environ.get("EPC_API_ENGLAND_WALES_TOKEN", "").strip() or None
-    if token is None:
-        raise ValueError(
-            "Missing token. Provide token=... or set EPC_API_ENGLAND_WALES_TOKEN (Base64-encoded basic auth token)."
-        )
-
-    normalized = load_uprns(None, [str(x) for x in uprns])
-    out, tmp, resume = out_paths(path, overwrite=overwrite)
-    run_batches(
-        token=token,
-        uprns=normalized,
-        output_tmp=tmp,
-        resume_path=resume,
-        batch_size=batch_size,
-        page_size=page_size,
-        overwrite=overwrite,
+    return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).save_epc_by_uprn_file(
+        uprns, path, overwrite=overwrite
     )
-
-    successful_uprns = 0
-    certificate_rows = 0
-    if tmp.exists() and tmp.stat().st_size > 0:
-        import duckdb
-
-        con = duckdb.connect()
-        r1 = con.execute("SELECT COUNT(*) FROM read_csv(?)", [str(tmp)]).fetchone()
-        r2 = con.execute("SELECT COUNT(DISTINCT CAST(uprn AS VARCHAR)) FROM read_csv(?)", [str(tmp)]).fetchone()
-
-        if r1 is not None:
-            certificate_rows = int(r1[0] or 0)
-        if r2 is not None:
-            successful_uprns = int(r2[0] or 0)
-
-    finalise_output(tmp, out, resume)
-    return out, len(normalized), successful_uprns, certificate_rows
 
 
 def run_batches(

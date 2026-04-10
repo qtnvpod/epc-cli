@@ -1,4 +1,5 @@
 from epc_ew.consumer import (
+    EpcEwClient,
     fetch_all_for_batch,
     fetch_page,
     finalise_output,
@@ -11,6 +12,7 @@ from epc_ew.consumer import (
 )
 
 __all__ = [
+    "EpcEwClient",
     "fetch_all_for_batch",
     "fetch_page",
     "finalise_output",
