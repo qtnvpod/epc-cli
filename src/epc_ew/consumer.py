@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+from io import StringIO
 from decimal import Decimal, InvalidOperation
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -223,6 +224,50 @@ def _split_header(txt: str) -> tuple[str, str]:
         return "", ""
     lines = txt.splitlines(True)
     return (lines[0], "".join(lines[1:])) if lines else ("", "")
+
+
+def _csv_pages_to_rows(pages: list[str]) -> list[dict[str, str]]:
+    if not pages:
+        return []
+    head, body0 = _split_header(pages[0])
+    if not head.strip():
+        return []
+    bodies = [body0]
+    for p in pages[1:]:
+        _, b = _split_header(p)
+        bodies.append(b)
+    combined = head + "".join(bodies)
+    r = csv.DictReader(StringIO(combined))
+    return [dict(row) for row in r]
+
+
+def get_epc_rows(
+    uprns: list[str | int],
+    *,
+    token: str | None = None,
+    batch_size: int = 50,
+    page_size: int = MAX_PAGE_SIZE,
+) -> list[dict[str, str]]:
+    """
+    Fetch domestic EPC rows (England & Wales) for the given UPRNs.
+
+    Returns a list of dicts where keys are the API CSV column names.
+    """
+    if token is None or not token.strip():
+        token = os.environ.get("EPC_API_ENGLAND_WALES_TOKEN", "").strip() or None
+    if token is None:
+        raise ValueError(
+            "Missing token. Provide token=... or set EPC_API_ENGLAND_WALES_TOKEN (Base64-encoded basic auth token)."
+        )
+
+    u = load_uprns(None, [str(x) for x in uprns])
+    rows: list[dict[str, str]] = []
+    batches = _chunks(u, batch_size)
+    with httpx.Client(base_url=API_BASE_URL, timeout=httpx.Timeout(60.0), follow_redirects=True) as c:
+        for b in batches:
+            pages = fetch_all_for_batch(c, token=token, uprns=b, page_size=page_size)
+            rows.extend(_csv_pages_to_rows(pages))
+    return rows
 
 
 def run_batches(
