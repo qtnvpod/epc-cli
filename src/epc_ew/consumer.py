@@ -11,7 +11,7 @@ from io import StringIO
 from decimal import Decimal, InvalidOperation
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import httpx
 
@@ -242,7 +242,7 @@ def _csv_pages_to_rows(pages: list[str]) -> list[dict[str, str]]:
 
 
 def get_epc_rows(
-    uprns: list[str | int],
+    uprns: Sequence[str | int],
     *,
     token: str | None = None,
     batch_size: int = 50,
@@ -268,6 +268,23 @@ def get_epc_rows(
             pages = fetch_all_for_batch(c, token=token, uprns=b, page_size=page_size)
             rows.extend(_csv_pages_to_rows(pages))
     return rows
+
+
+def get_epc_by_uprn(
+    uprns: Sequence[str | int],
+    *,
+    token: str | None = None,
+    batch_size: int = 50,
+    page_size: int = MAX_PAGE_SIZE,
+) -> dict[str, list[dict[str, str]]]:
+
+    normalized = load_uprns(None, [str(x) for x in uprns])
+    out: dict[str, list[dict[str, str]]] = {u: [] for u in normalized}
+    for row in get_epc_rows(normalized, token=token, batch_size=batch_size, page_size=page_size):
+        u = (row.get("uprn") or "").strip()
+        if u in out:
+            out[u].append(row)
+    return out
 
 
 def run_batches(
