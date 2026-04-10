@@ -7,6 +7,7 @@ from epc_ew.consumer import (
     load_uprns,
     out_paths,
     run_batches,
+    save_epc_by_uprn_file,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "load_uprns",
     "out_paths",
     "run_batches",
+    "save_epc_by_uprn_file",
 ]

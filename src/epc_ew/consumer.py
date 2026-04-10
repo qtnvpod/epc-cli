@@ -287,6 +287,50 @@ def get_epc_by_uprn(
     return out
 
 
+def save_epc_by_uprn_file(
+    uprns: Sequence[str | int],
+    path: Path,
+    *,
+    token: str | None = None,
+    batch_size: int = 50,
+    page_size: int = MAX_PAGE_SIZE,
+    overwrite: bool = False,
+) -> tuple[Path, int, int, int]:
+
+    if token is None or not token.strip():
+        token = os.environ.get("EPC_API_ENGLAND_WALES_TOKEN", "").strip() or None
+    if token is None:
+        raise ValueError(
+            "Missing token. Provide token=... or set EPC_API_ENGLAND_WALES_TOKEN (Base64-encoded basic auth token)."
+        )
+
+    normalized = load_uprns(None, [str(x) for x in uprns])
+    out, tmp, resume = out_paths(path, overwrite=overwrite)
+    run_batches(
+        token=token,
+        uprns=normalized,
+        output_tmp=tmp,
+        resume_path=resume,
+        batch_size=batch_size,
+        page_size=page_size,
+        overwrite=overwrite,
+    )
+
+    successful_uprns = 0
+    certificate_rows = 0
+    if tmp.exists() and tmp.stat().st_size > 0:
+        import duckdb
+
+        con = duckdb.connect()
+        r1 = con.execute("SELECT COUNT(*) FROM read_csv(?)", [str(tmp)]).fetchone()
+        r2 = con.execute("SELECT COUNT(DISTINCT CAST(uprn AS VARCHAR)) FROM read_csv(?)", [str(tmp)]).fetchone()
+        certificate_rows = int((r1[0] if r1 is not None else 0) or 0)
+        successful_uprns = int((r2[0] if r2 is not None else 0) or 0)
+
+    finalise_output(tmp, out, resume)
+    return out, len(normalized), successful_uprns, certificate_rows
+
+
 def run_batches(
     *,
     token: str,
