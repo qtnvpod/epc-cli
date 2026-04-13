@@ -1,5 +1,7 @@
 from epc_ew.consumer import (
     EpcEwClient,
+    EPC_REQUIRED_COLUMNS,
+    EpcRow,
     fetch_all_for_batch,
     fetch_page,
     finalise_output,
@@ -13,6 +15,8 @@ from epc_ew.consumer import (
 
 __all__ = [
     "EpcEwClient",
+    "EPC_REQUIRED_COLUMNS",
+    "EpcRow",
     "fetch_all_for_batch",
     "fetch_page",
     "finalise_output",

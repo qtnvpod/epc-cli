@@ -26,6 +26,7 @@ line-length = 100
 dev = [
     "mypy>=1.20.0",
     "epc-ew-cli",
+    "pytest>=8.0.0",
 ]
 
 [tool.uv.sources]

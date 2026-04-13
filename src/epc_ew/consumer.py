@@ -11,7 +11,7 @@ from io import StringIO
 from decimal import Decimal, InvalidOperation
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, TypedDict
 
 import httpx
 
@@ -19,6 +19,9 @@ import httpx
 API_BASE_URL = "https://epc.opendatacommunities.org"
 DOMESTIC_SEARCH_PATH = "/api/v1/domestic/search"
 MAX_PAGE_SIZE = 5000
+
+EPC_REQUIRED_COLUMNS = ("lmk-key", "uprn")
+EpcRow = TypedDict("EpcRow", {"lmk-key": str, "uprn": str}, total=False)
 
 _NUM = re.compile(r"^\d+$")
 
@@ -238,7 +241,7 @@ def _split_header(txt: str) -> tuple[str, str]:
     return (lines[0], "".join(lines[1:])) if lines else ("", "")
 
 
-def _csv_pages_to_rows(pages: list[str]) -> list[dict[str, str]]:
+def _csv_pages_to_rows(pages: list[str]) -> list[EpcRow]:
     if not pages:
         return []
     head, body0 = _split_header(pages[0])
@@ -250,7 +253,7 @@ def _csv_pages_to_rows(pages: list[str]) -> list[dict[str, str]]:
         bodies.append(b)
     combined = head + "".join(bodies)
     r = csv.DictReader(StringIO(combined))
-    return [dict(row) for row in r]
+    return [dict(row) for row in r]  # type: ignore[return-value]
 
 
 class EpcEwClient:
@@ -260,24 +263,31 @@ class EpcEwClient:
         token: str | None = None,
         batch_size: int = 50,
         page_size: int = MAX_PAGE_SIZE,
+        transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.token = _resolve_token(token)
         self.batch_size = batch_size
         self.page_size = page_size
+        self._transport = transport
 
-    def get_epc_rows(self, uprns: Sequence[str | int]) -> list[dict[str, str]]:
+    def get_epc_rows(self, uprns: Sequence[str | int]) -> list[EpcRow]:
         u = load_uprns(None, [str(x) for x in uprns])
-        rows: list[dict[str, str]] = []
+        rows: list[EpcRow] = []
         batches = _chunks(u, self.batch_size)
-        with httpx.Client(base_url=API_BASE_URL, timeout=httpx.Timeout(60.0), follow_redirects=True) as c:
+        with httpx.Client(
+            base_url=API_BASE_URL,
+            timeout=httpx.Timeout(60.0),
+            follow_redirects=True,
+            transport=self._transport,
+        ) as c:
             for b in batches:
                 pages = fetch_all_for_batch(c, token=self.token, uprns=b, page_size=self.page_size)
-                rows.extend(_csv_pages_to_rows(pages))
+                rows.extend(_csv_pages_to_rows(pages))  # type: ignore[arg-type]
         return rows
 
-    def get_epc_by_uprn(self, uprns: Sequence[str | int]) -> dict[str, list[dict[str, str]]]:
+    def get_epc_by_uprn(self, uprns: Sequence[str | int]) -> dict[str, list[EpcRow]]:
         normalized = load_uprns(None, [str(x) for x in uprns])
-        out: dict[str, list[dict[str, str]]] = {u: [] for u in normalized}
+        out: dict[str, list[EpcRow]] = {u: [] for u in normalized}
         for row in self.get_epc_rows(normalized):
             u = (row.get("uprn") or "").strip()
             if u in out:
@@ -325,7 +335,8 @@ def get_epc_rows(
     token: str | None = None,
     batch_size: int = 50,
     page_size: int = MAX_PAGE_SIZE,
-) -> list[dict[str, str]]:
+) -> list[EpcRow]:
+
     return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).get_epc_rows(uprns)
 
 
@@ -335,7 +346,7 @@ def get_epc_by_uprn(
     token: str | None = None,
     batch_size: int = 50,
     page_size: int = MAX_PAGE_SIZE,
-) -> dict[str, list[dict[str, str]]]:
+) -> dict[str, list[EpcRow]]:
     return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).get_epc_by_uprn(uprns)
 
 
