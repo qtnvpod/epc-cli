@@ -270,7 +270,7 @@ class EpcEwClient:
         self.page_size = page_size
         self._transport = transport
 
-    def get_epc_rows(self, uprns: Sequence[str | int]) -> list[EpcRow]:
+    def get_epc_as_list(self, uprns: Sequence[str | int]) -> list[EpcRow]:
         u = load_uprns(None, [str(x) for x in uprns])
         rows: list[EpcRow] = []
         batches = _chunks(u, self.batch_size)
@@ -285,10 +285,10 @@ class EpcEwClient:
                 rows.extend(_csv_pages_to_rows(pages))  # type: ignore[arg-type]
         return rows
 
-    def get_epc_by_uprn(self, uprns: Sequence[str | int]) -> dict[str, list[EpcRow]]:
+    def get_epc_as_map(self, uprns: Sequence[str | int]) -> dict[str, list[EpcRow]]:
         normalized = load_uprns(None, [str(x) for x in uprns])
         out: dict[str, list[EpcRow]] = {u: [] for u in normalized}
-        for row in self.get_epc_rows(normalized):
+        for row in self.get_epc_as_list(normalized):
             u = (row.get("uprn") or "").strip()
             if u in out:
                 out[u].append(row)
@@ -329,7 +329,7 @@ class EpcEwClient:
         return out, len(normalized), successful_uprns, certificate_rows
 
 
-def get_epc_rows(
+def get_epc_as_list(
     uprns: Sequence[str | int],
     *,
     token: str | None = None,
@@ -337,17 +337,17 @@ def get_epc_rows(
     page_size: int = MAX_PAGE_SIZE,
 ) -> list[EpcRow]:
 
-    return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).get_epc_rows(uprns)
+    return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).get_epc_as_list(uprns)
 
 
-def get_epc_by_uprn(
+def get_epc_as_map(
     uprns: Sequence[str | int],
     *,
     token: str | None = None,
     batch_size: int = 50,
     page_size: int = MAX_PAGE_SIZE,
 ) -> dict[str, list[EpcRow]]:
-    return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).get_epc_by_uprn(uprns)
+    return EpcEwClient(token=token, batch_size=batch_size, page_size=page_size).get_epc_as_map(uprns)
 
 
 def save_epc_by_uprn_file(

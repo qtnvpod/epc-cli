@@ -17,7 +17,7 @@ def test_get_epc_rows_no_results_returns_empty_list() -> None:
         return _resp_csv("lmk-key,uprn\n")
 
     client = EpcEwClient(token="dummy", transport=httpx.MockTransport(handler))
-    rows = client.get_epc_rows([100])
+    rows = client.get_epc_as_list([100])
     assert rows == []
 
 
@@ -28,7 +28,7 @@ def test_get_epc_by_uprn_includes_missing_as_empty_list() -> None:
         return _resp_csv("lmk-key,uprn\nabc,100\n")
 
     client = EpcEwClient(token="dummy", transport=httpx.MockTransport(handler))
-    m = client.get_epc_by_uprn([100, 101])
+    m = client.get_epc_as_map([100, 101])
     assert set(m.keys()) == {"100", "101"}
     assert len(m["100"]) == 1
     assert m["101"] == []
@@ -45,5 +45,6 @@ def test_paging_combines_pages_and_drops_duplicate_headers() -> None:
         return _resp_csv("lmk-key,uprn\nid2,100\n")
 
     client = EpcEwClient(token="dummy", transport=httpx.MockTransport(handler), page_size=1, batch_size=1)
-    rows = client.get_epc_rows([100])
-    assert [r["lmk-key"] for r in rows] == ["id1", "id2"]
+    rows = client.get_epc_as_list([100])
+    keys = [r.get("lmk-key") for r in rows]
+    assert keys == ["id1", "id2"]

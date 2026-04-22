@@ -6,7 +6,7 @@ from typing import Any
 
 from flask import Flask, render_template, request
 
-from epc_ew import EpcEwClient
+from epc_ew import EpcEwClient, EpcRow
 
 
 @dataclass
@@ -14,7 +14,7 @@ class PageModel:
     uprns_text: str
     token_missing: bool
     error: str | None
-    results: dict[str, list[dict[str, Any]]] | None
+    results: dict[str, list[EpcRow]] | None
     missing: list[str] | None
 
 
@@ -63,7 +63,7 @@ def create_app() -> Flask:
 
         try:
             client = EpcEwClient()
-            results = client.get_epc_by_uprn(uprns)
+            results = client.get_epc_as_map(uprns)
             missing = sorted([u for u, rows in results.items() if not rows])
             return render_template(
                 "index.html",

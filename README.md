@@ -43,9 +43,9 @@ uv run python -m epc_ew_cli --uprns 100023336956 --output out.parquet
 **Import the library**
 
 ```python
-from epc_ew import get_epc_rows
+from epc_ew import get_epc_as_list
 
 uprns = [100, 101, 299]
-rows = get_epc_rows(uprns)  # list of row dicts (includes at least `lmk-key` and `uprn` when present)
+rows = get_epc_as_list(uprns)  # list of row dicts (includes at least `lmk-key` and `uprn` when present)
 # do something with rows
 ```
